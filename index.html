@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Macro Camera App</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background-color: #ffffff;
+      color: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    header {
+      width: 100%;
+      text-align: center;
+      padding: 12px;
+      font-size: 22px;
+      font-weight: bold;
+      background-color: #f0f0f0;
+      border-bottom: 1px solid #ccc;
+    }
+
+    .note {
+      text-align: center;
+      font-size: 13px;
+      color: #666;
+      margin: 8px 10px 0;
+    }
+
+    .video-container {
+      position: relative;
+      width: 100%;
+      max-width: 360px;
+      margin-top: 10px;
+    }
+
+    video {
+      width: 100%;
+      border-radius: 10px;
+      border: 2px solid #ccc;
+    }
+
+    #frameLine {
+      position: absolute;
+      border: 2px dashed red;
+      width: 60%;
+      height: 60%;
+      top: 20%;
+      left: 20%;
+      pointer-events: none;
+      box-sizing: border-box;
+      z-index: 2;
+    }
+
+    canvas {
+      display: none;
+      margin-top: 10px;
+      width: 150px;
+      height: 150px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+
+    .controls, .sliders {
+      width: 90%;
+      max-width: 360px;
+      margin-top: 12px;
+    }
+
+    .button-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    button {
+      flex: 1;
+      padding: 10px;
+      font-size: 14px;
+      background-color: #2196f3;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #1976d2;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      font-size: 14px;
+      border-radius: 5px;
+      border: 1px solid #aaa;
+    }
+
+    .sliders label {
+      display: block;
+      margin: 6px 0 2px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    footer {
+      margin-top: auto;
+      padding: 10px;
+      text-align: center;
+      font-size: 12px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+
+  <header>Macro Camera App</header>
+  <div class="note">
+    Please allow <strong>camera access</strong> when prompted.<br/>
+    To save photos, allow <strong>file storage access</strong> if asked.
+  </div>
+
+  <div class="video-container">
+    <video id="video" autoplay playsinline></video>
+    <div id="frameLine"></div>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <div class="controls">
+    <div class="button-row">
+      <button onclick="takeMacroPhoto()">Capture</button>
+      <button onclick="downloadImage()">Download</button>
+      <button onclick="switchCamera()">Switch</button>
+    </div>
+    <input type="text" id="filename" placeholder="Enter image name"/>
+  </div>
+
+  <div class="sliders">
+    <label>Brightness: <input type="range" id="brightness" min="0.5" max="2" value="1" step="0.1"></label>
+    <label>Contrast: <input type="range" id="contrast" min="0.5" max="3" value="1" step="0.1"></label>
+    <label>Sharpness: <input type="range" id="sharpness" min="0" max="5" value="0" step="1"></label>
+    <label>Smoothness: <input type="range" id="smoothness" min="0" max="5" value="0" step="1"></label>
+  </div>
+
+  <footer>Created by Zahid Ahmad — Comprehensive School Student</footer>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const filenameInput = document.getElementById('filename');
+    const brightnessSlider = document.getElementById('brightness');
+    const contrastSlider = document.getElementById('contrast');
+    const sharpnessSlider = document.getElementById('sharpness');
+    const smoothnessSlider = document.getElementById('smoothness');
+
+    let currentStream = null;
+    let useFrontCamera = false;
+    let originalImageData = null;
+
+    async function startCamera() {
+      if (currentStream) currentStream.getTracks().forEach(track => track.stop());
+      const constraints = { video: { facingMode: useFrontCamera ? 'user' : 'environment' } };
+      try {
+        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = currentStream;
+      } catch (err) {
+        alert('Camera error: ' + err.message);
+      }
+    }
+
+    function switchCamera() {
+      useFrontCamera = !useFrontCamera;
+      startCamera();
+    }
+
+    function takeMacroPhoto() {
+      const ctx = canvas.getContext('2d');
+      const vw = video.videoWidth, vh = video.videoHeight;
+      const cropW = vw * 0.6, cropH = vh * 0.6;
+      const sx = (vw - cropW) / 2;
+      const sy = (vh - cropH) / 2;
+
+      canvas.width = 400;
+      canvas.height = 400;
+      ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, canvas.width, canvas.height);
+      canvas.style.display = 'block';
+      originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      applyAdjustments();
+    }
+
+    brightnessSlider.addEventListener('input', applyAdjustments);
+    contrastSlider.addEventListener('input', applyAdjustments);
+    sharpnessSlider.addEventListener('input', applyAdjustments);
+    smoothnessSlider.addEventListener('input', applyAdjustments);
+
+    function applyAdjustments() {
+      if (!originalImageData) return;
+      const ctx = canvas.getContext('2d');
+      let data = new Uint8ClampedArray(originalImageData.data);
+      const brightness = parseFloat(brightnessSlider.value);
+      const contrast = parseFloat(contrastSlider.value);
+
+      for (let i = 0; i < data.length; i += 4) {
+        data[i] = truncate(((data[i] - 128) * contrast + 128) * brightness);
+        data[i + 1] = truncate(((data[i + 1] - 128) * contrast + 128) * brightness);
+        data[i + 2] = truncate(((data[i + 2] - 128) * contrast + 128) * brightness);
+      }
+
+      let imageData = new ImageData(data, originalImageData.width, originalImageData.height);
+      ctx.putImageData(imageData, 0, 0);
+
+      const smooth = parseInt(smoothnessSlider.value);
+      if (smooth > 0) applySmoothing(smooth);
+
+      const sharp = parseInt(sharpnessSlider.value);
+      if (sharp > 0) applySharpness(sharp);
+    }
+
+    function applySmoothing(level) {
+      const ctx = canvas.getContext('2d');
+      for (let i = 0; i < level; i++) {
+        ctx.filter = 'blur(1px)';
+        ctx.drawImage(canvas, 0, 0);
+      }
+      ctx.filter = 'none';
+    }
+
+    function applySharpness(level) {
+      const weights = [0, -1, 0, -1, 5 + (level - 1), -1, 0, -1, 0];
+      const ctx = canvas.getContext('2d');
+      const src = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const dst = ctx.createImageData(src);
+      const w = src.width, h = src.height;
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          for (let c = 0; c < 3; c++) {
+            let i = (y * w + x) * 4 + c;
+            let val =
+              weights[0] * src.data[((y - 1) * w + (x - 1)) * 4 + c] +
+              weights[1] * src.data[((y - 1) * w + x) * 4 + c] +
+              weights[2] * src.data[((y - 1) * w + (x + 1)) * 4 + c] +
+              weights[3] * src.data[(y * w + (x - 1)) * 4 + c] +
+              weights[4] * src.data[(y * w + x) * 4 + c] +
+              weights[5] * src.data[(y * w + (x + 1)) * 4 + c] +
+              weights[6] * src.data[((y + 1) * w + (x - 1)) * 4 + c] +
+              weights[7] * src.data[((y + 1) * w + x) * 4 + c] +
+              weights[8] * src.data[((y + 1) * w + (x + 1)) * 4 + c];
+            dst.data[i] = truncate(val);
+          }
+          dst.data[(y * w + x) * 4 + 3] = 255;
+        }
+      }
+      ctx.putImageData(dst, 0, 0);
+    }
+
+    function truncate(v) {
+      return Math.max(0, Math.min(255, v));
+    }
+
+    function dataURLtoBlob(dataURL) {
+      const byteString = atob(dataURL.split(',')[1]);
+      const mimeString = dataURL.split(',')[0].split(':')[1].split(';')[0];
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+      }
+      return new Blob([ab], { type: mimeString });
+    }
+
+    function downloadImage() {
+      const name = filenameInput.value.trim() || 'macro';
+      const MAX_KB = 19;
+      const TARGET_BYTES = MAX_KB * 1024;
+      let low = 0.1, high = 1.0;
+      let bestBlob = null;
+
+      for (let i = 0; i < 10; i++) {
+        const mid = (low + high) / 2;
+        const dataUrl = canvas.toDataURL('image/jpeg', mid);
+        const blob = dataURLtoBlob(dataUrl);
+
+        if (blob.size <= TARGET_BYTES) {
+          bestBlob = blob;
+          low = mid;
+        } else {
+          high = mid;
+        }
+      }
+
+      if (bestBlob) {
+        const link = document.createElement('a');
+        link.download = name + '.jpg';
+        link.href = URL.createObjectURL(bestBlob);
+        link.click();
+      } else {
+        alert("Could not save image under 19KB. Try reducing sharpness or brightness.");
+      }
+    }
+
+    startCamera();
+  </script>
+</body>
+</html>
